@@ -167,6 +167,7 @@ public:
         Vector3 hit_position;
         Vector3 hit_normal;
         double hit_dist;
+        double cumulative_dist = 0.0;
 
         Vector3 position = ray.position;
         while (IsInWorld(position, world)) {
@@ -236,8 +237,9 @@ public:
                     }
                 }
 
-                if (max_distance < dist)
-                    break;
+                cumulative_dist += dist;
+                if (max_distance < cumulative_dist)
+                    return false;
                 
                 position = position + ray.direction * (dist + kRayTracingForwardingFactor);
             }
@@ -296,7 +298,7 @@ void Play::Update(double delta_time) {
 }
 
 void Play::UpdateInput() {
-    if (IsKeyDown(VK_SPACE)) {
+    if (IsKeyDown(VK_CAPITAL)) {
         if (!_is_block_selected) return;
         Vector3 block_position = (_selected_block_position + _selected_block_normal).Floor();
         int x = (int)block_position.x;
