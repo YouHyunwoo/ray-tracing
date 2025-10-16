@@ -116,6 +116,8 @@ class Player {
 public:
     Vector3 position = { 5, 5.5, 5 };
     View view = { 0, 0 };
+    Vector3 velocity = { 0, 0, 0 };
+    bool is_jumping = false;
     double move_speed = 5.0;
     double tilt_speed = 2.0;
     Vector3 forward, right, up;
@@ -381,6 +383,31 @@ void Play::UpdatePlayerMovement(double delta_time) {
     }
     if (IsKeyPressed('K')) {
         _player.view.pitch = fmax(_player.view.pitch - _player.tilt_speed * delta_time, -45.0 * kDegreeToRadian);
+    }
+
+    if (IsKeyPressed(VK_SPACE)) {
+        _player.is_jumping = true;
+        _player.velocity = up * 0.2;
+    }
+
+    if (_player.is_jumping) {
+        _player.velocity.y += -0.01;
+        if (_player.velocity.y < 0)
+        {
+            Ray ray = { _player.position, down };
+            Hit hit;
+            bool is_hit = _ray_tracing.CastRay(ray, &hit, _player.velocity.y + 1, _world);
+            if (is_hit) {
+                _player.position = hit.point + up * 0.5;
+                _player.is_jumping = false;
+            }
+            else {
+                _player.position.y += _player.velocity.y;
+            }
+        }
+        else {
+            _player.position.y += _player.velocity.y;
+        }
     }
 }
 
