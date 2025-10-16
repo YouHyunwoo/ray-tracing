@@ -24,19 +24,6 @@ constexpr double kRayTracingMinimumDistance = 2.0;
 constexpr double kRayTracingDetectingFactor = 0.001;
 constexpr double kRayTracingForwardingFactor = 0.001;
 
-class View {
-public:
-    float yaw, pitch;
-    View(float yaw, float pitch) : yaw(yaw), pitch(pitch) {} 
-    Vector3 ToDirection() const {
-        return {
-            cos(yaw + M_PI_2) * cos(pitch),
-            sin(pitch),
-            sin(yaw + M_PI_2) * cos(pitch),
-        };
-    }
-};
-
 enum class BlockState {
     kNone,
     kExist,
@@ -71,30 +58,61 @@ public:
     void CreateBlock(int x, int y, int z) {
         _blocks[z][y][x] = BlockState::kExist;
     }
+    void CreateBlock(const Vector3& v) {
+        CreateBlock(v.x, v.y, v.z);
+    }
 
     void DeleteBlock(int x, int y, int z) {
         _blocks[z][y][x] = BlockState::kNone;
+    }
+    void DeleteBlock(const Vector3& v) {
+        DeleteBlock(v.x, v.y, v.z);
     }
 
     bool HasBlock(int x, int y, int z) const {
         return _blocks[z][y][x] == BlockState::kExist;
     }
+    bool HasBlock(const Vector3& v) const {
+        return HasBlock(v.x, v.y, v.z);
+    }
 
-    bool IsInBounds(float x, float y, float z) const {
-        return 0 <= x && x < kWidth &&
+    bool IsInBounds(double x, double y, double z) const {
+        return (
+            0 <= x && x < kWidth &&
             0 <= y && y < kHeight &&
-            0 <= z && z < kDepth;
+            0 <= z && z < kDepth
+        );
+    }
+    bool IsInBounds(const Vector3& v) const {
+        return IsInBounds(v.x, v.y, v.z);
+    }
+};
+
+class View {
+public:
+    double yaw, pitch;
+
+    View(double yaw, double pitch) : yaw(yaw), pitch(pitch) {}
+
+    Vector3 ToDirection() const {
+        return {
+            cos(yaw + M_PI_2) * cos(pitch),
+            sin(pitch),
+            sin(yaw + M_PI_2) * cos(pitch),
+        };
     }
 };
 
 class Camera {
 public:
-    Vector3 position = { 5, 6, 5 };
+    Vector3 position = { 5, 5.5, 5 };
     View view = { 0, 0 };
+    double move_speed = 5.0f, tilt_speed = 2.0f;
     Vector3 forward, right, up;
-    float move_speed = 5.0f, tilt_speed = 2.0f;
 
     void Update(double delta_time);
+    void UpdateMovement(double delta_time);
+    void UpdateDirection();
 };
 
 struct Ray {
@@ -107,23 +125,23 @@ struct Hit {
 
 class RayTracing {
 public:
-    bool IsHitBlock(const Vector3& point, const World& world) {
+    bool IsHitBlock(const Vector3& point, const World& world) const {
         return world.HasBlock((int)point.x, (int)point.y, (int)point.z);
     }
 
-    bool IsHitBorderOfBlock(const Vector3& point) {
-        int count = 0;
+    bool IsHitBorderOfBlock(const Vector3& point) const {
+        size_t count = 0;
         if (fabs(round(point.x) - point.x) < kBlockBorderWidth) count++;
         if (fabs(round(point.y) - point.y) < kBlockBorderWidth) count++;
         if (fabs(round(point.z) - point.z) < kBlockBorderWidth) count++;
         return count >= 2;
     }
 
-    bool IsInWorld(const Vector3& point, const World& world) {
+    bool IsInWorld(const Vector3& point, const World& world) const {
         return world.IsInBounds(point.x, point.y, point.z);
     }
 
-    bool CastRay(const Ray& ray, Hit* hit, const World& world) {
+    bool CastRay(const Ray& ray, Hit* hit, const World& world) const {
         Vector3 hit_position;
         Vector3 hit_normal;
         double hit_dist;
@@ -207,14 +225,14 @@ public:
 class Play {
 private:
     bool _is_block_selected;
+    Vector3 _selected_block_position;
+    Vector3 _selected_block_normal;
     
     RayTracing _ray_tracing;
     World _world;
-public:
-    Vector3 _selected_block_position;
-    Vector3 _selected_block_normal;
     Camera _camera;
-    Play() : _world(kWorldWidth, kWorldHeight, kWorldDepth) {}
+public:
+    Play(int worldWidth, int worldHeight, int worldDepth) : _world(worldWidth, worldHeight, worldDepth) {}
 
     void Initialize();
 
@@ -230,15 +248,14 @@ public:
 
 Screen screen(kScreenWidth, kScreenHeight);
 Loop loop;
-Play play;
-
-void print_vec(int x, int y, const Vector3& v) {
-    screen.DrawTextWithFormat(x, y, "%f %f %f", v.x, v.y, v.z);
-}
-
-// * --------------------------------------------------------------------
+Play play(kWorldWidth, kWorldHeight, kWorldDepth);
 
 void Camera::Update(double delta_time) {
+    UpdateMovement(delta_time);
+    UpdateDirection();
+}
+
+void Camera::UpdateMovement(double delta_time) {
     if (IsKeyPressed('W')) {
         position.x += cos(view.yaw + M_PI_2) * move_speed * delta_time;
         position.z += sin(view.yaw + M_PI_2) * move_speed * delta_time;
@@ -262,12 +279,14 @@ void Camera::Update(double delta_time) {
         view.yaw -= tilt_speed * delta_time;
     }
     if (IsKeyPressed('I')) {
-        view.pitch += tilt_speed * delta_time;
+        view.pitch = fmin(view.pitch + tilt_speed * delta_time, 50.0 * kDegreeToRadian);
     }
     if (IsKeyPressed('K')) {
-        view.pitch -= tilt_speed * delta_time;
+        view.pitch = fmax(view.pitch - tilt_speed * delta_time, -45.0 * kDegreeToRadian);
     }
+}
 
+void Camera::UpdateDirection() {
     forward = view.ToDirection().Normalize();
 
     float old_yaw = view.yaw;
@@ -295,17 +314,15 @@ void Play::Update(double delta_time) {
     UpdateBlockSelection();
     _camera.Update(delta_time);
 
-    Vector3 cam_pos = _camera.position;
     while (true) {
-        if (cam_pos.y <= _world.kHeight - 2 && _world.HasBlock(cam_pos.x, cam_pos.y - 1, cam_pos.z)) {
-            cam_pos.y++;
+        if (_camera.position.y <= _world.kHeight - 2 && _world.HasBlock(_camera.position)) {
+            _camera.position.y++;
         }
-        else if (cam_pos.y >= 1 && !_world.HasBlock(cam_pos.x, cam_pos.y - 2, cam_pos.z)) {
-            cam_pos.y--;
+        else if (_camera.position.y >= 1 && !_world.HasBlock(_camera.position + down)) {
+            _camera.position.y--;
         }
         else break;
     }
-    _camera.position = cam_pos;
 }
 
 void Play::UpdateInput() {
@@ -412,14 +429,17 @@ void Play::Dispose() { }
 void init() {
     play.Initialize();
 }
+
 void update(double delta_time) {
     play.Update(delta_time);
 }
+
 void render() {
     play.Render();
 
     screen.DrawTextWithFormat(0, 20, "%d", GetAsyncKeyState(VK_SPACE));
 }
+
 void dispose() {
     play.Dispose();
 }
