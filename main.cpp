@@ -109,10 +109,32 @@ public:
     View view = { 0, 0 };
     double move_speed = 5.0f, tilt_speed = 2.0f;
     Vector3 forward, right, up;
+};
 
-    void Update(double delta_time);
-    void UpdateMovement(double delta_time);
-    void UpdateDirection();
+class Player {
+    World& _world;
+public:
+    Vector3 position = { 5, 5.5, 5 };
+    View view = { 0, 0 };
+    double move_speed = 5.0;
+    double tilt_speed = 2.0;
+    Vector3 forward, right, up;
+
+    Player(World& world) : _world(world), view(0, 0) {}
+
+    void Update(double delta_time) {
+        forward = view.ToDirection().Normalize();
+
+        float old_yaw = view.yaw;
+        view.yaw -= M_PI_2;
+        right = view.ToDirection().Normalize();
+        view.yaw = old_yaw;
+
+        float old_pitch = view.pitch;
+        view.pitch += M_PI_2;
+        up = view.ToDirection().Normalize();
+        view.pitch = old_pitch;
+    }
 };
 
 struct Ray {
@@ -231,14 +253,17 @@ private:
     RayTracing _ray_tracing;
     World _world;
     Camera _camera;
+    Player _player;
 public:
-    Play(int worldWidth, int worldHeight, int worldDepth) : _world(worldWidth, worldHeight, worldDepth) {}
+    Play(int worldWidth, int worldHeight, int worldDepth) : _world(worldWidth, worldHeight, worldDepth), _player(_world) {}
 
     void Initialize();
 
     void Update(double delta_time);
     void UpdateInput();
     void UpdateBlockSelection();
+    void UpdatePlayerMovement(double delta_time);
+    void UpdateCamera();
 
     void Render();
     void RenderWithRayTracing();
@@ -249,56 +274,6 @@ public:
 Screen screen(kScreenWidth, kScreenHeight);
 Loop loop;
 Play play(kWorldWidth, kWorldHeight, kWorldDepth);
-
-void Camera::Update(double delta_time) {
-    UpdateMovement(delta_time);
-    UpdateDirection();
-}
-
-void Camera::UpdateMovement(double delta_time) {
-    if (IsKeyPressed('W')) {
-        position.x += cos(view.yaw + M_PI_2) * move_speed * delta_time;
-        position.z += sin(view.yaw + M_PI_2) * move_speed * delta_time;
-    }
-    if (IsKeyPressed('S')) {
-        position.x -= cos(view.yaw + M_PI_2) * move_speed * delta_time;
-        position.z -= sin(view.yaw + M_PI_2) * move_speed * delta_time;
-    }
-    if (IsKeyPressed('A')) {
-        position.x -= cos(view.yaw) * move_speed * delta_time;
-        position.z -= sin(view.yaw) * move_speed * delta_time;
-    }
-    if (IsKeyPressed('D')) {
-        position.x += cos(view.yaw) * move_speed * delta_time;
-        position.z += sin(view.yaw) * move_speed * delta_time;
-    }
-    if (IsKeyPressed('J')) {
-        view.yaw += tilt_speed * delta_time;
-    }
-    if (IsKeyPressed('L')) {
-        view.yaw -= tilt_speed * delta_time;
-    }
-    if (IsKeyPressed('I')) {
-        view.pitch = fmin(view.pitch + tilt_speed * delta_time, 50.0 * kDegreeToRadian);
-    }
-    if (IsKeyPressed('K')) {
-        view.pitch = fmax(view.pitch - tilt_speed * delta_time, -45.0 * kDegreeToRadian);
-    }
-}
-
-void Camera::UpdateDirection() {
-    forward = view.ToDirection().Normalize();
-
-    float old_yaw = view.yaw;
-    view.yaw -= M_PI_2;
-    right = view.ToDirection().Normalize();
-    view.yaw = old_yaw;
-
-    float old_pitch = view.pitch;
-    view.pitch += M_PI_2;
-    up = view.ToDirection().Normalize();
-    view.pitch = old_pitch;
-}
 
 void Play::Initialize() {
     for (int d = 0; d < _world.kDepth; d++)
@@ -312,17 +287,9 @@ void Play::Initialize() {
 void Play::Update(double delta_time) {
     UpdateInput();
     UpdateBlockSelection();
-    _camera.Update(delta_time);
-
-    while (true) {
-        if (_camera.position.y <= _world.kHeight - 2 && _world.HasBlock(_camera.position)) {
-            _camera.position.y++;
-        }
-        else if (_camera.position.y >= 1 && !_world.HasBlock(_camera.position + down)) {
-            _camera.position.y--;
-        }
-        else break;
-    }
+    UpdatePlayerMovement(delta_time);
+    _player.Update(delta_time);
+    UpdateCamera();
 }
 
 void Play::UpdateInput() {
@@ -354,6 +321,52 @@ void Play::UpdateBlockSelection() {
         _selected_block_position = hit.point - hit.normal * 0.5;
         _selected_block_normal = hit.normal;
     }
+}
+
+void Play::UpdatePlayerMovement(double delta_time) {
+    if (IsKeyPressed('W')) {
+        _player.position.x += cos(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+        _player.position.z += sin(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+    }
+    if (IsKeyPressed('S')) {
+        _player.position.x -= cos(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+        _player.position.z -= sin(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+    }
+    if (IsKeyPressed('A')) {
+        _player.position.x -= cos(_player.view.yaw) * _player.move_speed * delta_time;
+        _player.position.z -= sin(_player.view.yaw) * _player.move_speed * delta_time;
+    }
+    if (IsKeyPressed('D')) {
+        _player.position.x += cos(_player.view.yaw) * _player.move_speed * delta_time;
+        _player.position.z += sin(_player.view.yaw) * _player.move_speed * delta_time;
+    }
+    if (IsKeyPressed('J')) {
+        _player.view.yaw += _player.tilt_speed * delta_time;
+    }
+    if (IsKeyPressed('L')) {
+        _player.view.yaw -= _player.tilt_speed * delta_time;
+    }
+    if (IsKeyPressed('I')) {
+        _player.view.pitch = fmin(_player.view.pitch + _player.tilt_speed * delta_time, 50.0 * kDegreeToRadian);
+    }
+    if (IsKeyPressed('K')) {
+        _player.view.pitch = fmax(_player.view.pitch - _player.tilt_speed * delta_time, -45.0 * kDegreeToRadian);
+    }
+
+    while (true) {
+        if (_player.position.y <= _world.kHeight - 2 && _world.HasBlock(_player.position)) {
+            _player.position.y++;
+        }
+        else if (_player.position.y >= 1 && !_world.HasBlock(_player.position + down)) {
+            _player.position.y--;
+        }
+        else break;
+    }
+}
+
+void Play::UpdateCamera() {
+    _camera.position = _player.position;
+    _camera.view = _player.view;
 }
 
 void Play::Render() {
@@ -436,8 +449,6 @@ void update(double delta_time) {
 
 void render() {
     play.Render();
-
-    screen.DrawTextWithFormat(0, 20, "%d", GetAsyncKeyState(VK_SPACE));
 }
 
 void dispose() {
