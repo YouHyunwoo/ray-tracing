@@ -163,7 +163,7 @@ public:
         return world.IsInBounds(point.x, point.y, point.z);
     }
 
-    bool CastRay(const Ray& ray, Hit* hit, const World& world) const {
+    bool CastRay(const Ray& ray, Hit* hit, double max_distance, const World& world) const {
         Vector3 hit_position;
         Vector3 hit_normal;
         double hit_dist;
@@ -235,6 +235,9 @@ public:
                         hit_normal = forward;
                     }
                 }
+
+                if (max_distance < dist)
+                    break;
                 
                 position = position + ray.direction * (dist + kRayTracingForwardingFactor);
             }
@@ -315,7 +318,7 @@ void Play::UpdateInput() {
 void Play::UpdateBlockSelection() {
     Hit hit;
     Ray ray = { _camera.position, _camera.view.ToDirection() };
-    bool is_hit = _ray_tracing.CastRay(ray, &hit, _world);
+    bool is_hit = _ray_tracing.CastRay(ray, &hit, 3, _world);
     _is_block_selected = is_hit;
     if (is_hit) {
         _selected_block_position = hit.point - hit.normal * 0.5;
@@ -324,22 +327,47 @@ void Play::UpdateBlockSelection() {
 }
 
 void Play::UpdatePlayerMovement(double delta_time) {
+    bool is_moved = false;
+    Vector3 next_position = _player.position;
+
     if (IsKeyPressed('W')) {
-        _player.position.x += cos(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
-        _player.position.z += sin(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+        is_moved = true;
+        next_position.x = _player.position.x + cos(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+        next_position.z = _player.position.z + sin(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
     }
     if (IsKeyPressed('S')) {
-        _player.position.x -= cos(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
-        _player.position.z -= sin(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+        is_moved = true;
+        next_position.x = _player.position.x - cos(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
+        next_position.z = _player.position.z - sin(_player.view.yaw + M_PI_2) * _player.move_speed * delta_time;
     }
+
     if (IsKeyPressed('A')) {
-        _player.position.x -= cos(_player.view.yaw) * _player.move_speed * delta_time;
-        _player.position.z -= sin(_player.view.yaw) * _player.move_speed * delta_time;
+        is_moved = true;
+        next_position.x = _player.position.x - cos(_player.view.yaw) * _player.move_speed * delta_time;
+        next_position.z = _player.position.z - sin(_player.view.yaw) * _player.move_speed * delta_time;
     }
     if (IsKeyPressed('D')) {
-        _player.position.x += cos(_player.view.yaw) * _player.move_speed * delta_time;
-        _player.position.z += sin(_player.view.yaw) * _player.move_speed * delta_time;
+        is_moved = true;
+        next_position.x = _player.position.x + cos(_player.view.yaw) * _player.move_speed * delta_time;
+        next_position.z = _player.position.z + sin(_player.view.yaw) * _player.move_speed * delta_time;
     }
+
+    if (is_moved) {
+        Vector3 toward = next_position - _player.position;
+        Vector3 direction = toward.Normalize();
+        Ray ray = { _player.position, direction };
+        Hit hit;
+        bool is_hit = _ray_tracing.CastRay(ray, &hit, 0.5 + _player.move_speed * delta_time, _world);
+        if (is_hit) {
+            hit.point = hit.point - direction * 0.5;
+            Vector3 remainder = next_position - hit.point;
+            _player.position = hit.point + remainder - hit.normal * remainder.Dot(hit.normal);
+        }
+        else {
+            _player.position = next_position;
+        }
+    }
+    
     if (IsKeyPressed('J')) {
         _player.view.yaw += _player.tilt_speed * delta_time;
     }
@@ -351,16 +379,6 @@ void Play::UpdatePlayerMovement(double delta_time) {
     }
     if (IsKeyPressed('K')) {
         _player.view.pitch = fmax(_player.view.pitch - _player.tilt_speed * delta_time, -45.0 * kDegreeToRadian);
-    }
-
-    while (true) {
-        if (_player.position.y <= _world.kHeight - 2 && _world.HasBlock(_player.position)) {
-            _player.position.y++;
-        }
-        else if (_player.position.y >= 1 && !_world.HasBlock(_player.position + down)) {
-            _player.position.y--;
-        }
-        else break;
     }
 }
 
@@ -400,6 +418,8 @@ void Play::RenderWithRayTracing() {
     Hit hit;
     Ray ray = { _camera.position };
     Vector3 direction = screen_left_top;
+    Vector3 world_size = { (double)_world.kWidth, (double)_world.kWidth, (double)_world.kWidth };
+    double max_distance = world_size.Magnitude();
     for (int r = 0; r < screen.height; r++) {
         Vector3 t = direction;
 
@@ -408,7 +428,7 @@ void Play::RenderWithRayTracing() {
 
             screen.SaveContext();
 
-            bool is_hit = _ray_tracing.CastRay(ray, &hit, _world);
+            bool is_hit = _ray_tracing.CastRay(ray, &hit, max_distance, _world);
             if (is_hit) {
                 bool is_border_of_block = _ray_tracing.IsHitBorderOfBlock(hit.point);
                 screen.SetCharacter(is_border_of_block ? '.' : '#');
