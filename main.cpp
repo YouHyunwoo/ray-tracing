@@ -20,7 +20,7 @@ constexpr double kCameraFOVDegree = 90.0;
 constexpr double kCameraFOV = kCameraFOVDegree * kDegreeToRadian;
 constexpr double kHalfOfCameraFOV = kCameraFOV / 2.0;
 
-constexpr double kRayTracingMinimumDistance = 2.0;
+constexpr double kRayTracingMaximumStep = 2.0;
 constexpr double kRayTracingDetectingFactor = 0.001;
 constexpr double kRayTracingForwardingFactor = 0.001;
 
@@ -168,82 +168,82 @@ public:
     bool CastRay(const Ray& ray, Hit* hit, double max_distance, const World& world) const {
         Vector3 hit_position;
         Vector3 hit_normal;
-        double hit_dist;
-        double cumulative_dist = 0.0;
+        double hit_step;
+        double cumulative_step = 0.0;
 
         Vector3 position = ray.position;
         while (IsInWorld(position, world)) {
             if (IsHitBlock(position, world)) {
                 if (hit != nullptr) {
-                    hit->point = hit_position + ray.direction * hit_dist;
+                    hit->point = hit_position + ray.direction * hit_step;
                     hit->normal = hit_normal;
                 }
                 return true;
             }
 
             {
-                double dist = kRayTracingMinimumDistance;
+                double current_step = kRayTracingMaximumStep;
 
                 if (ray.direction.x > kRayTracingDetectingFactor) {
                     double step = (ceil(position.x) - position.x) / ray.direction.x;
-                    if (dist > step) {
-                        dist = step;
+                    if (current_step > step) {
+                        current_step = step;
                         hit_position = position;
-                        hit_dist = dist;
+                        hit_step = current_step;
                         hit_normal = left;
                     }
                 }
                 else if (ray.direction.x < -kRayTracingDetectingFactor) {
                     double step = (floor(position.x) - position.x) / ray.direction.x;
-                    if (dist > step) {
-                        dist = step;
+                    if (current_step > step) {
+                        current_step = step;
                         hit_position = position;
-                        hit_dist = dist;
+                        hit_step = current_step;
                         hit_normal = right;
                     }
                 }
                 if (ray.direction.y > kRayTracingDetectingFactor) {
                     double step = (ceil(position.y) - position.y) / ray.direction.y;
-                    if (dist > step) {
-                        dist = step;
+                    if (current_step > step) {
+                        current_step = step;
                         hit_position = position;
-                        hit_dist = dist;
+                        hit_step = current_step;
                         hit_normal = down;
                     }
                 }
                 else if (ray.direction.y < -kRayTracingDetectingFactor) {
                     double step = (floor(position.y) - position.y) / ray.direction.y;
-                    if (dist > step) {
-                        dist = step;
+                    if (current_step > step) {
+                        current_step = step;
                         hit_position = position;
-                        hit_dist = dist;
+                        hit_step = current_step;
                         hit_normal = up;
                     }
                 }
                 if (ray.direction.z > kRayTracingDetectingFactor) {
                     double step = (ceil(position.z) - position.z) / ray.direction.z;
-                    if (dist > step) {
-                        dist = step;
+                    if (current_step > step) {
+                        current_step = step;
                         hit_position = position;
-                        hit_dist = dist;
+                        hit_step = current_step;
                         hit_normal = back;
                     }
                 }
                 else if (ray.direction.z < -kRayTracingDetectingFactor) {
                     double step = (floor(position.z) - position.z) / ray.direction.z;
-                    if (dist > step) {
-                        dist = step;
+                    if (current_step > step) {
+                        current_step = step;
                         hit_position = position;
-                        hit_dist = dist;
+                        hit_step = current_step;
                         hit_normal = forward;
                     }
                 }
 
-                cumulative_dist += dist;
-                if (max_distance < cumulative_dist)
+                cumulative_step += current_step;
+                if (max_distance < cumulative_step)
                     return false;
                 
-                position = position + ray.direction * (dist + kRayTracingForwardingFactor);
+                position = position + ray.direction * (current_step + kRayTracingForwardingFactor);
             }
         }
 
@@ -387,11 +387,11 @@ void Play::UpdatePlayerMovement(double delta_time) {
 
     if (IsKeyPressed(VK_SPACE)) {
         _player.is_jumping = true;
-        _player.velocity = up * 0.2;
+        _player.velocity = up * 5 * delta_time;
     }
 
     if (_player.is_jumping) {
-        _player.velocity.y += -0.01;
+        _player.velocity.y += -0.5 * delta_time;
         if (_player.velocity.y < 0)
         {
             Ray ray = { _player.position, down };
