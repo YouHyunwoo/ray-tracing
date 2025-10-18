@@ -105,21 +105,20 @@ public:
 
 class Camera {
 public:
-    Vector3 position = { 5, 5.5, 5 };
+    Vector3 position = { 0, 0, 0 };
     View view = { 0, 0 };
-    double move_speed = 5.0f, tilt_speed = 2.0f;
-    Vector3 forward, right, up;
 };
 
 class Player {
     World& _world;
 public:
-    Vector3 position = { 5, 5.5, 5 };
+    Vector3 position = { 5, 5, 5 };
     View view = { 0, 0 };
     Vector3 velocity = { 0, 0, 0 };
-    bool is_jumping = false;
+    bool is_physics_enabled = false;
     double move_speed = 5.0;
     double tilt_speed = 2.0;
+    double jump_force = 0.35;
     Vector3 forward, right, up;
 
     Player(World& world) : _world(world), view(0, 0) {}
@@ -172,6 +171,13 @@ public:
         double cumulative_step = 0.0;
 
         Vector3 position = ray.position;
+        bool is_fit_x = position.x == floor(position.x);
+        bool is_fit_y = position.y == floor(position.y);
+        bool is_fit_z = position.z == floor(position.z);
+
+        if (is_fit_x) position.x += 0.00001;
+        if (is_fit_y) position.y += 0.00001;
+        if (is_fit_z) position.z += 0.00001;
         while (IsInWorld(position, world)) {
             if (IsHitBlock(position, world)) {
                 if (hit != nullptr) {
@@ -288,7 +294,7 @@ void Play::Initialize() {
             for (int c = 0; c < _world.kWidth; c++)
                 _world.CreateBlock(c, r, d);
 
-    _world.CreateBlock(5, 6, 8);
+    _world.CreateBlock(5, 7, 8);
 }
 
 void Play::Update(double delta_time) {
@@ -386,24 +392,37 @@ void Play::UpdatePlayerMovement(double delta_time) {
     }
 
     if (IsKeyPressed(VK_SPACE)) {
-        _player.is_jumping = true;
-        _player.velocity = up * 5 * delta_time;
+        if (!_player.is_physics_enabled) {
+            _player.is_physics_enabled = true;
+            _player.velocity = up * _player.jump_force;
+        }
     }
 
-    if (_player.is_jumping) {
+    if (_player.is_physics_enabled == false) {
+        Ray ray = { _player.position, down };
+        Hit hit;
+        bool is_hit = _ray_tracing.CastRay(ray, &hit, 0.001, _world);
+        if (!is_hit) {
+            _player.is_physics_enabled = true;
+        }
+    }
+
+    if (_player.is_physics_enabled) {
         _player.velocity.y += -0.5 * delta_time;
-        if (_player.velocity.y < 0)
-        {
-            Ray ray = { _player.position, down };
+
+        if (_player.velocity.y != 0) {
+            Ray ray = { _player.velocity.y > 0 ? _player.position + up * 0.6 : _player.position, _player.velocity.y > 0 ? up : down };
             Hit hit;
-            bool is_hit = _ray_tracing.CastRay(ray, &hit, _player.velocity.y + 1, _world);
+            bool is_hit = _ray_tracing.CastRay(ray, &hit, fabs(_player.velocity.y), _world);
             if (is_hit) {
-                _player.position = hit.point + up * 0.5;
-                _player.is_jumping = false;
+                if (_player.velocity.y < 0) {
+                    _player.position = hit.point + up * 0.00001;
+                    _player.is_physics_enabled = false;
+                }
+                _player.velocity.y = 0;
             }
-            else {
+            else
                 _player.position.y += _player.velocity.y;
-            }
         }
         else {
             _player.position.y += _player.velocity.y;
@@ -412,7 +431,7 @@ void Play::UpdatePlayerMovement(double delta_time) {
 }
 
 void Play::UpdateCamera() {
-    _camera.position = _player.position;
+    _camera.position = _player.position + up * 0.5;
     _camera.view = _player.view;
 }
 
