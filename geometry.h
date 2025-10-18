@@ -15,6 +15,7 @@ struct Vector3 {
         return { x / static_cast<double>(s), y / static_cast<double>(s), z / static_cast<double>(s) };
     }
     double Dot(const Vector3& other) const;
+    Vector3 Cross(const Vector3& other) const;
     double Magnitude() const;
     Vector3 Normalize() const;
     Vector3 Floor() const;

@@ -13,7 +13,7 @@ Screen::Screen(uint32_t width, uint32_t height) :
     width(width), height(height),
     area(width * height),
     half_width(width / 2), half_height(height / 2),
-    aspect_ratio(height / (float)width) {
+    aspect_ratio((double)height / width) {
     _buffer = new BufferCell*[height];
     for (int r = 0; r < height; r++)
         _buffer[r] = new BufferCell[width]; // TODO: default value check

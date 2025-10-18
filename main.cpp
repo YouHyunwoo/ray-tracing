@@ -117,7 +117,7 @@ public:
     Vector3 velocity = { 0, 0, 0 };
     bool is_physics_enabled = false;
     double move_speed = 5.0;
-    double tilt_speed = 2.0;
+    double tilt_speed = 1.0;
     double jump_force = 0.35;
     Vector3 forward, right, up;
 
@@ -277,6 +277,7 @@ public:
     void UpdateBlockSelection();
     void UpdatePlayerMovement(double delta_time);
     void UpdateCamera();
+    void UpdatePhysics(double delta_time);
 
     void Render();
     void RenderWithRayTracing();
@@ -301,6 +302,7 @@ void Play::Update(double delta_time) {
     UpdateInput();
     UpdateBlockSelection();
     UpdatePlayerMovement(delta_time);
+    UpdatePhysics(delta_time);
     _player.Update(delta_time);
     UpdateCamera();
 }
@@ -385,10 +387,10 @@ void Play::UpdatePlayerMovement(double delta_time) {
         _player.view.yaw -= _player.tilt_speed * delta_time;
     }
     if (IsKeyPressed('I')) {
-        _player.view.pitch = fmin(_player.view.pitch + _player.tilt_speed * delta_time, 50.0 * kDegreeToRadian);
+        _player.view.pitch = fmin(_player.view.pitch + _player.tilt_speed * delta_time, 70.0 * kDegreeToRadian);
     }
     if (IsKeyPressed('K')) {
-        _player.view.pitch = fmax(_player.view.pitch - _player.tilt_speed * delta_time, -45.0 * kDegreeToRadian);
+        _player.view.pitch = fmax(_player.view.pitch - _player.tilt_speed * delta_time, -60.0 * kDegreeToRadian);
     }
 
     if (IsKeyPressed(VK_SPACE)) {
@@ -397,7 +399,9 @@ void Play::UpdatePlayerMovement(double delta_time) {
             _player.velocity = up * _player.jump_force;
         }
     }
+}
 
+void Play::UpdatePhysics(double delta_time) {
     if (_player.is_physics_enabled == false) {
         Ray ray = { _player.position, down };
         Hit hit;
@@ -449,15 +453,15 @@ void Play::RenderWithRayTracing() {
     Vector3 left_to_right = screen_right - screen_left;
 
     // vertical
-    _camera.view.pitch += kHalfOfCameraFOV / 2;
+    Vector3 screen_center = _camera.view.ToDirection() * cos(kHalfOfCameraFOV);
+    _camera.view.pitch += kHalfOfCameraFOV;
     Vector3 screen_top = _camera.view.ToDirection();
-    _camera.view.pitch -= kCameraFOV / 2;
+    _camera.view.pitch -= kCameraFOV;
     Vector3 screen_bottom = _camera.view.ToDirection();
-    _camera.view.pitch += kHalfOfCameraFOV / 2;
-    Vector3 top_to_bottom = screen_bottom - screen_top;
+    _camera.view.pitch += kHalfOfCameraFOV;
+    Vector3 top_to_bottom = (screen_bottom - screen_top) * screen.aspect_ratio * 2;
 
-    Vector3 screen_center = _camera.view.ToDirection();
-    Vector3 screen_left_top = screen_top + screen_left - screen_center;
+    Vector3 screen_left_top = screen_left - top_to_bottom / 2;
 
     // ray casting
     Vector3 horizontal_step = left_to_right * 1.0 / screen.width;

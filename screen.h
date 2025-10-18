@@ -48,7 +48,7 @@ private:
     bool IsInBounds(int x, int y);
 public:
     const uint32_t width, height;
-    const float aspect_ratio;
+    const double aspect_ratio;
     const uint32_t area;
     const uint32_t half_width, half_height;
 

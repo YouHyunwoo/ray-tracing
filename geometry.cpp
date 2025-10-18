@@ -25,6 +25,14 @@ double Vector3::Dot(const Vector3& other) const {
     return x * other.x + y * other.y + z * other.z;
 }
 
+Vector3 Vector3::Cross(const Vector3& other) const {
+    return {
+        y * other.z - z * other.y,
+        z * other.x - x * other.z,
+        x * other.y - y * other.x,
+    };
+}
+
 double Vector3::Magnitude() const {
     return sqrt(Dot(*this));
 }
