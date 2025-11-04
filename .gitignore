@@ -41,3 +41,7 @@
 *.dwo
 
 .vscode/
+videos/
+build/
+bin/
+images/

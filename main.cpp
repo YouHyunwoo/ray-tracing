@@ -1,12 +1,14 @@
+#include <string>
+#include <cstring>
+#include <vector>
+#include <windows.h>
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include "loop.h"
-#include "screen.h"
-#include "geometry.h"
-#include "input.h"
+#include "garnet.h"
 
-constexpr int kScreenWidth = 200 * 2;
-constexpr int kScreenHeight = 50 * 2;
+constexpr double kScreenSizeScaler = 1.5;
+constexpr int kScreenWidth = (int)(200 * kScreenSizeScaler);
+constexpr int kScreenHeight = (int)(50 * kScreenSizeScaler);
 
 constexpr int kWorldWidth = 20;
 constexpr int kWorldHeight = 20;
@@ -59,21 +61,21 @@ public:
         _blocks[z][y][x] = BlockState::kExist;
     }
     void CreateBlock(const Vector3& v) {
-        CreateBlock(v.x, v.y, v.z);
+        CreateBlock((int)v.x, (int)v.y, (int)v.z);
     }
 
     void DeleteBlock(int x, int y, int z) {
         _blocks[z][y][x] = BlockState::kNone;
     }
     void DeleteBlock(const Vector3& v) {
-        DeleteBlock(v.x, v.y, v.z);
+        DeleteBlock((int)v.x, (int)v.y, (int)v.z);
     }
 
     bool HasBlock(int x, int y, int z) const {
         return _blocks[z][y][x] == BlockState::kExist;
     }
     bool HasBlock(const Vector3& v) const {
-        return HasBlock(v.x, v.y, v.z);
+        return HasBlock((int)v.x, (int)v.y, (int)v.z);
     }
 
     bool IsInBounds(double x, double y, double z) const {
@@ -126,12 +128,12 @@ public:
     void Update(double delta_time) {
         forward = view.ToDirection().Normalize();
 
-        float old_yaw = view.yaw;
+        double old_yaw = view.yaw;
         view.yaw -= M_PI_2;
         right = view.ToDirection().Normalize();
         view.yaw = old_yaw;
 
-        float old_pitch = view.pitch;
+        double old_pitch = view.pitch;
         view.pitch += M_PI_2;
         up = view.ToDirection().Normalize();
         view.pitch = old_pitch;
@@ -286,8 +288,46 @@ public:
 };
 
 Screen screen(kScreenWidth, kScreenHeight);
-Loop loop;
-Play play(kWorldWidth, kWorldHeight, kWorldDepth);
+Graphic graphic(screen);
+Texture *grass_tex, *moss_tex, *dirt_tex;
+
+class RayTracingLoop : public Loop {
+private:
+    Play* play;
+protected:
+    void OnInitialize() override {
+        grass_tex = Texture::Load("images/grass-texture.png");
+        moss_tex = Texture::Load("images/moss-texture.png");
+        dirt_tex = Texture::Load("images/dirt-texture.png");
+
+        play = new Play(kWorldWidth, kWorldHeight, kWorldDepth);
+        play->Initialize();
+    }
+
+    void OnUpdate(double delta_time) override {
+        play->Update(delta_time);
+        if (IsKeyPressed(VK_OEM_3))
+            Quit();
+    }
+
+    void OnRender() override {
+        graphic.Clear();
+        play->Render();
+
+        Sleep(10);
+    }
+
+    void OnDispose() override {
+        if (grass_tex != nullptr)
+            delete grass_tex;
+        if (moss_tex != nullptr)
+            delete moss_tex;
+        if (dirt_tex != nullptr)
+            delete dirt_tex;
+        play->Dispose();
+        delete play;
+    }
+};
 
 void Play::Initialize() {
     for (int d = 0; d < _world.kDepth; d++)
@@ -323,8 +363,6 @@ void Play::UpdateInput() {
         int z = (int)_selected_block_position.z;
         _world.DeleteBlock(x, y, z);
     }
-    else if (IsKeyDown(VK_OEM_3))
-        loop.Quit();
 }
 
 void Play::UpdateBlockSelection() {
@@ -444,97 +482,93 @@ void Play::Render() {
 }
 
 void Play::RenderWithRayTracing() {
+    View left_view(_camera.view.yaw + M_PI_2, 0);
+    Vector3 left = left_view.ToDirection();
+    View up_view(_camera.view.yaw, _camera.view.pitch + M_PI_2);
+    Vector3 up = up_view.ToDirection();
+    
+    Vector3 screen_center = _camera.view.ToDirection();
+    
     // horizontal
-    _camera.view.yaw += kHalfOfCameraFOV;
-    Vector3 screen_left = _camera.view.ToDirection();
-    _camera.view.yaw -= kCameraFOV;
-    Vector3 screen_right = _camera.view.ToDirection();
-    _camera.view.yaw += kHalfOfCameraFOV;
+    Vector3 screen_left = screen_center + left;
+    Vector3 screen_right = screen_center - left;
     Vector3 left_to_right = screen_right - screen_left;
-
+    
     // vertical
-    Vector3 screen_center = _camera.view.ToDirection() * cos(kHalfOfCameraFOV);
-    _camera.view.pitch += kHalfOfCameraFOV;
-    Vector3 screen_top = _camera.view.ToDirection();
-    _camera.view.pitch -= kCameraFOV;
-    Vector3 screen_bottom = _camera.view.ToDirection();
-    _camera.view.pitch += kHalfOfCameraFOV;
+    Vector3 screen_top = screen_center + up;
+    Vector3 screen_bottom = screen_center - up;
     Vector3 top_to_bottom = (screen_bottom - screen_top) * screen.aspect_ratio * 2;
 
     Vector3 screen_left_top = screen_left - top_to_bottom / 2;
 
     // ray casting
     Vector3 horizontal_step = left_to_right * 1.0 / screen.width;
-    Vector3 vertical_step = top_to_bottom * 1.0 / screen.height;
+    Vector3 vertical_step = top_to_bottom * 1.0 / screen.height / 2;
 
     Hit hit;
     Ray ray = { _camera.position };
     Vector3 direction = screen_left_top;
     Vector3 world_size = { (double)_world.kWidth, (double)_world.kWidth, (double)_world.kWidth };
     double max_distance = world_size.Magnitude();
-    for (int r = 0; r < screen.height; r++) {
+    for (uint32_t r = 0; r < screen.height * 2; r++) {
         Vector3 t = direction;
 
-        for (int c = 0; c < screen.width; c++) {
+        for (uint32_t c = 0; c < screen.width; c++) {
             ray.direction = direction;
-
-            screen.SaveContext();
 
             bool is_hit = _ray_tracing.CastRay(ray, &hit, max_distance, _world);
             if (is_hit) {
                 bool is_border_of_block = _ray_tracing.IsHitBorderOfBlock(hit.point);
-                screen.SetCharacter(is_border_of_block ? '.' : '#');
-
+                Color color;
+                Vector3 uv = hit.point - hit.point.Floor();
+                if (abs(hit.normal.z + 1) < 0.001)
+                    grass_tex->GetColor(uv.x, 1 - uv.y, color);
+                if (abs(hit.normal.z - 1) < 0.001)
+                    grass_tex->GetColor(1 - uv.x, 1 - uv.y, color);
+                if (abs(hit.normal.x + 1) < 0.001)
+                    grass_tex->GetColor(1 - uv.z, 1 - uv.y, color);
+                if (abs(hit.normal.x - 1) < 0.001)
+                    grass_tex->GetColor(uv.z, 1 - uv.y, color);
+                if (abs(hit.normal.y + 1) < 0.001)
+                    dirt_tex->GetColor(uv.x, 1 - uv.z, color);
+                if (abs(hit.normal.y - 1) < 0.001)
+                    moss_tex->GetColor(uv.x, uv.z, color);
+                    
                 if (_is_block_selected) {
                     bool is_selected_block = (hit.point - hit.normal * 0.5).Floor() == _selected_block_position.Floor();
-
+                    
                     if (is_selected_block) {
                         bool is_selected_surface = hit.normal.Round() == _selected_block_normal.Round();
-                        if (!is_selected_surface)
-                            screen.SetDimMode();
-                        screen.SetForegroundColor(Color::kGreen);
+                        if (is_selected_surface) {
+                            color.r = (uint8_t)fmin(color.r * 1.5, 255);
+                            color.g = (uint8_t)fmin(color.g * 1.5, 255);
+                            color.b = (uint8_t)fmin(color.b * 1.5, 255);
+                        }
+                        else {
+                            color.r = (uint8_t)fmin(color.r * 1.2, 255);
+                            color.g = (uint8_t)fmin(color.g * 1.2, 255);
+                            color.b = (uint8_t)fmin(color.b * 1.2, 255);
+                        }
                     }
                 }
-            }
-            else
-                screen.SetCharacter(' ');
-            screen.DrawPoint(c, r);
 
-            screen.RestoreContext();
+                graphic.DrawPoint(c, r, color);
+            }
 
             direction = direction + horizontal_step;
         }
 
         direction = t + vertical_step;
     }
+    graphic.DrawPoint(graphic.width / 2, graphic.height / 2, {200, 0, 0});
+    graphic.Flush();
 }
 
 void Play::Dispose() { }
 
-void init() {
-    play.Initialize();
-}
-
-void update(double delta_time) {
-    play.Update(delta_time);
-}
-
-void render() {
-    play.Render();
-}
-
-void dispose() {
-    play.Dispose();
-}
-
 int main() {
-    loop.Start(
-        &screen,
-        init,
-        update,
-        render,
-        dispose
-    );
+    RayTracingLoop loop;
+    loop.Start(&screen);
 
     return 0;
 }
