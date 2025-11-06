@@ -6,7 +6,7 @@
 #include <math.h>
 #include "garnet.h"
 
-constexpr double kScreenSizeScaler = 1.5;
+constexpr double kScreenSizeScaler = 2.5;
 constexpr int kScreenWidth = (int)(200 * kScreenSizeScaler);
 constexpr int kScreenHeight = (int)(50 * kScreenSizeScaler);
 
